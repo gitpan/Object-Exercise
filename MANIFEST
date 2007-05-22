@@ -1,7 +1,9 @@
 lib/Object/Exercise.pm
-t/00-use_ok.t
-t/01-simple-queue.t
 Makefile.PL
 README
 MANIFEST
+t/00-use_ok.t
+t/01-simple-queue.t
+t/02-run-long-list.t
+t/03-bench-long-list.t
 META.yml                                 Module meta-data (added by MakeMaker)

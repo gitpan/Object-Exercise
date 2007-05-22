@@ -1,4 +1,4 @@
-# $Id:$
+# $Id: Exercise.pm 32 2007-05-22 23:05:01Z lembark $
 #######################################################################
 # housekeeping
 #######################################################################
@@ -18,26 +18,7 @@ use Scalar::Util qw( reftype );
 
 our $VERSION    = 0.30;
 
-my $benchmark   = '';
-my $run_tests   = '';
 my $cmp_struct  = '';    
-
-BEGIN
-{
-    no warnings;
-
-    # defining the environment variables avoids compiling
-    # unnecessary code.
-
-    if( $ENV{ OBJECT_EXERCISE_BENCH } =~ /\S/  )
-    {
-        $run_tests = sub {};
-    }
-    elsif( $ENV{ OBJECT_EXERCISE_TEST } =~ /\S/  )
-    {
-        $benchmark = sub {};
-    }
-}
 
 # use to control breakpoints within the loop.
 # our necessary to permit use of local.
@@ -247,7 +228,7 @@ my %ref_handlerz =
 ########################################################################
 # benchmark, execution handlers
 
-$benchmark
+my $benchmark
 ||= sub
 {
     # add the logging message, then replace the arguments with
@@ -288,7 +269,7 @@ $benchmark
         }
     }
 
-    my $diff = timestr timediff Benchmark->new, $t0;
+    my $diff = timestr timediff $t0, Benchmark->new;
 
     $log_message->
     (
@@ -297,7 +278,7 @@ $benchmark
     );
 };
 
-$run_tests
+my $run_tests
 ||= sub
 {
     use Test::More;
@@ -357,7 +338,9 @@ $run_tests
         }
         else
         {
-            die "Unable to handle element '$_'"
+            # display the message and keep going.
+
+            $log_message->( $_ );
         }
     }
 
@@ -381,7 +364,7 @@ sub import
 
     my $name    = 'exercise';
 
-    my $bench   = ! $run_tests;
+    my $sub     = $run_tests;
 
     for( @_ )
     {
@@ -395,10 +378,7 @@ sub import
         }
         elsif( /-b/ )
         {
-            $benchmark
-            or die "Bogus '-b': benchmark turned off by OBJECT_EXERCISE_TEST";
-
-            $bench = 1;
+            $sub = $benchmark;
         }
         elsif( /-n/ )
         {
@@ -410,11 +390,14 @@ sub import
     # push the configured object out to whatever the 
     # caller asked for (default 'exercise').
 
+    $log_message->( "Installing '$sub' as '$name'" )
+    if $verbose;
+
     my $caller  = caller;
 
     my $ref     = qualify_to_ref $name, $caller;
 
-    *$ref       = $bench ? \$benchmark : \$run_tests;
+    *$ref       = \$sub;
 
     return
 }
@@ -439,19 +422,28 @@ Object::Exercise - Generic execution & benchmark harness for method calls.
       [ method arg arg arg ... ]          # method and arguments
       [ 1 ],                              # expected value
     ],
+
     [
       qw( method arg arg arg )            # just check for $@
     ],
+
     [
       [ qw( method expected to fail ) ]   # continue on failure
       [],
     ],
+
+    [
+      [ $coderef, @argz ],                # $obj->$coderef( @argz )
+      [ ( 1 .. 10 )     ],                # expected value
+      'Coderef returns list'              # hardwired message
+    ]
   );
 
-  # You can push the operations through an class or object:
+  # You can push the operations through an class:
 
   $exercise->( 'YourClass', @test_opz );    # YourClass->method( @argz )
 
+  # or an object:
 
   my $object = YourClass->new( @whatever );
 
@@ -465,7 +457,7 @@ Object::Exercise - Generic execution & benchmark harness for method calls.
 This package exports a single subroutine , C<exercise>, which
 functions as an OO execution loop.
 
-C<$run_tests> is a subroutine reference that takes a list of arguments.  The
+C<$execute> is a subroutine reference that takes a list of arguments.  The
 first element in that list is an object of the class being tested.  The
 remaining elements are a list of operations, each of which is an array
 reference.
@@ -550,8 +542,9 @@ operation is ignored.
 These are nested arrayrefs:
 
   [
-    [ expected          ],
-    [ $method => @args  ]
+    [ $method => @args  ],
+    [ expected return   ],
+    'optional message'
   ],
 
 The return value can be any sort of structure but must
@@ -567,34 +560,39 @@ expected value for a call that returns arrayrefs will
 look like:
 
   [
+    [ $method => @argz ],
     [ # outer arrayref stored return value
 
-      [
-        # return value is itself an arrayref
-      ]
+      [ # return value is itself an arrayref ]
     ],
-    [ $method => @argz ],
   ],
 
 If the method returns hashrefs in list context then
 use something like:
 
   [
+    [ $method => @argz ],
     [ # outer arrayref stored return value
 
-      {
-        # return value is itself an hashref
-      }
+      { # return value is itself an hashref }
     ],
-    [ $method => @argz ],
   ],
 
-The C<ok> message is formed by joining the method and arguments
-on whitespace. This can lead to prove issuing lines like:
+The default C<ok> message is formed by joining the 
+method and arguments on whitespace. This can lead to 
+prove issuing lines like:
 
   ok save foobar HASH(0x123456) (999)
 
 but usually gives at least recognizable results.
+
+To override this, simply supply a message of your own:
+
+  [
+    [ $method => @argz ],
+    [ { # return value is itself an hashref } ],
+    'Remember: This should return a hashref!'       # your message
+  ],
 
 =item Testing Known Failures
 
@@ -608,22 +606,20 @@ then the C<$@> will be logged as passed.
 These tests look like:
 
   [
-    [],
     [ qw( method designed to fail ) ]
+    '',
   ]
 
 This will give a message like:
 
-  ok save foobar HASH(0x123456) expected exception (999)
+  ok save foobar HASH(0x123456) expected failure (999)
 
 
 =item Run-Only Items
 
 These consist simply of a method and its arguments:
 
-  [
-    method => arg, arg, ...
-  ],
+  [ method => arg, arg, ...  ],
 
 A method with no arguments is a one-liner:
 
@@ -640,6 +636,26 @@ the execution of some methods, but usually will not
 separate test for C<defined>).
 
 =back
+
+=item Coderefs
+
+Coderef's are dispatched as standard method calls:
+
+    my $coderef = sub { ... };  # or \&somesub
+
+
+    [
+        [ $coderef, @argz ],
+        [ ... ]
+    ]
+
+is executed as:
+
+    $obj->$coderef( @argz )
+
+this allows dispatching the object outside of its class,
+say to a utility function that does some extra data checking
+or logging.
 
 =head2 Re-Running Failed Operations
 
@@ -676,7 +692,16 @@ For example:
 will stop execution at the first failed operation, allowing
 a single C<s> to step into the C<$obj->$method( @argz )> call.
 
-=head2 Inserting Breakpoints
+=head2 Harness Directives
+
+There are times when you want to control the execution
+or harness arguments as it is running. The directives
+are processed by the harness itself. These can set a 
+breakpoint prior to calling one of the methods, adjust
+the verbosity, set the continue switch, or set an object
+value.
+
+=head3 Breakpoints
 
 It is sometimes helpful to stop the execution of code
 before it fails in order to examine its execution before
@@ -693,8 +718,8 @@ and stop at the method call:
     'Check why foo returns 2 instead of 3',
 
     [
-      [ 3 ],
       [ qw( frobnicate foo ) ],
+      [ 3 ],
     ]
   ],
 
