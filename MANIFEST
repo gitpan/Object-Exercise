@@ -1,0 +1,7 @@
+lib/Object/Exercise.pm
+t/00-use_ok.t
+t/01-simple-queue.t
+Makefile.PL
+README
+MANIFEST
+META.yml                                 Module meta-data (added by MakeMaker)

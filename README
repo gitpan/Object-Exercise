@@ -1,0 +1,24 @@
+
+  use Object::Execute;
+
+  my @operationz =
+  (
+    [
+      [ method arg arg arg ... ],          # method and arguments
+      [ 1 ],                              # expected value
+    ],
+    [
+      qw( method arg arg arg )            # just check for $@
+    ],
+    [
+      [ qw( method expected to fail ) ],   # continue on failure
+      '',
+    ],
+    [
+      [ qw( method arg arg ) ],            # hardwired message
+      [ 1 ],
+      'your message here'
+    ],
+
+  );
+
