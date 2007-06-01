@@ -1,24 +1,31 @@
-# $Id: Exercise.pm 32 2007-05-22 23:05:01Z lembark $
+# $Id: Exercise.pm 46 2007-06-01 20:51:28Z lembark $
 #######################################################################
 # housekeeping
 #######################################################################
 
 package Object::Exercise;
 
+require 5.6.2;
+
 use strict;
-
-use Symbol;
-use Data::Dumper;
-
-use Scalar::Util qw( reftype );
+use Test::More;
 
 ########################################################################
 # package variables
 ########################################################################
 
-our $VERSION    = 0.30;
+our $VERSION    = 0.33;
+
+# run_tests & benchmark can be pre-assigned a value here 
+# in some begin block to avoid compiling the un-used 
+# portion of code.
+
+our $run_tests;
+our $benchmark;
 
 my $cmp_struct  = '';    
+my $pass        = '';
+my $fail        = '';
 
 # use to control breakpoints within the loop.
 # our necessary to permit use of local.
@@ -30,6 +37,7 @@ our $debug      = '';
 
 my $verbose     = '';
 my $continue    = '';
+my $noplan      = '';
 
 # dispatch table for loop commands.
 # these are non-ref elements in the work queue.
@@ -57,7 +65,7 @@ for
 (
     [ qw( quiet     noverbose   ) ],
     [ qw( break     debug       ) ],
-    [ qw( single    debug       ) ],
+    [ qw( nobreak   nodebug     ) ],
 )
 {
     my( $alias, $existing ) = @$_;
@@ -68,7 +76,6 @@ for
     die "Invalid alias '$alias' for unknown '$existing'"
 }
 
-
 ########################################################################
 # utility subs
 ########################################################################
@@ -76,6 +83,9 @@ for
 my $log_message
 = sub
 {
+    use IO::Handle;
+    use Data::Dumper;
+
     local $Data::Dumper::Purity     = 0;
     local $Data::Dumper::Terse      = 1;
     local $Data::Dumper::Indent     = 1;
@@ -85,8 +95,9 @@ my $log_message
     local $Data::Dumper::Quotekeys  = 0;
 
     local $, = "\n";
+    local $\ = "\n";
 
-    print STDERR map { ref $_ ? Dumper $_ : $_ } @_, '';
+    *STDERR{ IO }->printflush( map { ref $_ ? Dumper $_ : $_ } @_ );
 
     ()
 };
@@ -131,6 +142,8 @@ my %ref_handlerz =
     ARRAY =>
     sub
     {
+        use Scalar::Util qw( reftype );
+
         # this is the most common place to end up: dealing with
         # an action + test or just an action.
         #
@@ -146,48 +159,56 @@ my %ref_handlerz =
         my $method  = '';
         my $message = '';
         my $compare = '';
-        my $ignore  = '';
 
         if
         (
             1 <= @$element
             &&
             'ARRAY' eq reftype $element->[0]
-            &&
-            'ARRAY' eq reftype $element->[1]
         )
         {
+            no warnings;
+
             ( $argz, $expect, $message ) = @$element;
 
             $compare    = 1;
-            $ignore     = $continue || ( $expect eq '' );
 
-            $message ||= join ' ', @$argz;
+            $message ||= join ' ', @$argz, '->', @$expect;
         }
         else
         {
+            no warnings;
+
             @$argz = @$element;
 
-            $message = join ' ', @$argz , '->', @$expect;
+            $message = join ' ', @$argz;
         }
 
         my $cmd     = $gen_command->( $obj, $argz );
 
         my $result  = eval { [ &$cmd ] };
 
-        if( $@ && $ignore )
+        if( $@ )
         {
-            $log_message->( "Expected failure: $message", $argz )
-            if $verbose;
-        }
-        elsif( $@ )
-        {
-            $handle_error->( "Failed execute: $message", $cmd );
+            if( $continue || $expect eq '' )
+            {
+                pass "Expected failure: $message" unless $noplan;
+            }
+            else
+            {
+                fail "Unexpected failure: $message" unless $noplan;
+
+                $handle_error->( "Failed execute: $message", $cmd );
+            }
         }
         elsif( $compare )
         {
             $cmp_struct->( $result, $expect, $message )
-            or $handle_error->
+            and return;
+
+            fail "Failed compare: $message" unless $noplan;
+
+            $handle_error->
             (
                 "Failed compare: $message",
                 'Found:',   $result,
@@ -228,14 +249,27 @@ my %ref_handlerz =
 ########################################################################
 # benchmark, execution handlers
 
-my $benchmark
+$benchmark
 ||= sub
 {
-    # add the logging message, then replace the arguments with
-    # the lookup result -- see arg order for Test::Deep.
+    # Time::HiRes is supposed to be silently handled by 
+    # Benchmark.
+    # Catch: it aint'. 
+    # Fix is to eval the require of Time::HiRes and fail
+    # through to the benchmark w/o :hireswallclcok if the
+    # first require fails.
 
-    use Benchmark qw( :hireswallclock );
+    eval
+    {
+        use Time::HiRes;
+        use Benchmark qw( :hireswallclock );
+        1
+    }
+    or
+    eval 'use Benchmark';
+
     use File::Basename;
+
 
     my $base    = basename $0;
 
@@ -278,37 +312,41 @@ my $benchmark
     );
 };
 
-my $run_tests
+$run_tests
 ||= sub
 {
-    use Test::More;
     use Test::Deep qw( cmp_deeply  );
 
     $cmp_struct = Test::Deep->can( 'cmp_deeply' );
 
-    my $obj = shift;
+    my $obj     = shift;
 
-    my $test_count
-    = grep
-    {
-        (ref $_)              # ignore breaks
-        &&
-        (ref $_ eq q{ARRAY})  # check for array
-        &&
-        (ref $_->[0])         # expected value is initial
-    }
-    @_;
+    my $count   = 0;
 
-    if( $test_count )
+    unless( $noplan )
     {
-        plan tests => $test_count;
+        $count
+        = grep
+        {
+            (ref $_)              # ignore breaks
+            &&
+            (ref $_ eq q{ARRAY})  # check for array
+            &&
+            (ref $_->[0])         # test in initial location
+        }
+        @_;
 
-        $log_message->( "Executing: $test_count tests" )
-        if $verbose;
-    }
-    else
-    {
-        plan tests => 1;
+        if( $count )
+        {
+            plan tests => $count;
+
+            $log_message->( "Executing: $count tests" )
+            if $verbose;
+        }
+        else
+        {
+            plan tests => 1;
+        }
     }
 
     TEST:
@@ -344,7 +382,15 @@ my $run_tests
         }
     }
 
-    pass "Execution complete" unless $test_count;
+    if( $noplan )
+    {
+        $log_message->( "Execution complete" )
+        if $verbose;
+    }
+    else
+    {
+        $count or pass "Execution complete";
+    }
 };
 
 ########################################################################
@@ -353,6 +399,8 @@ my $run_tests
 
 sub import
 {
+    use Symbol;
+
     # discard the class argument.
 
     shift;
@@ -361,6 +409,8 @@ sub import
     # -k turns off fatal on error.
     # -v turns on  verbose.
     # -b uses benchmark if env doesn't set it first.
+    # -n specifies the installed name
+    # -p turns off plannng in the test loop.
 
     my $name    = 'exercise';
 
@@ -701,78 +751,108 @@ breakpoint prior to calling one of the methods, adjust
 the verbosity, set the continue switch, or set an object
 value.
 
+=head3 Messages
+
+Sometimes it's reassuring to know progress is being
+make (or it's helpful to keep a log of what happend).
+
+Non-referent entries in the test list that aren't 
+recognized are simply printed:
+
+    ...
+
+    "Updating based on $computed value...",
+
+    [
+        [ foobar  => $computed_value ],
+        ...
+    ]
+
+    "... Finished Computed value update.",
+
+will sandwich a method call between two messages.
+
 =head3 Breakpoints
 
 It is sometimes helpful to stop the execution of code
 before it fails in order to examine its execution before
-the failure. Any non-ref entry in the data will print the
-text and set the debug flag to true. After that every
-operation will halt at the C<$obj->$method(...)> line.
+the failure. The "debug" directive will set the breakpoint
+before the first method call. This will leave you at
+$obj->$method( @argz ) (see below under DEBUGGING).
 
-For example, this will print the message C<Check why...>
-and stop at the method call:
+The 'debug' directive can be aliased as 'break'.
+
+For example, this will run up to the point where 
+"frobnicate" is about to be called and then stop:
 
   [
     ...
 
-    'Check why foo returns 2 instead of 3',
+    'break',
 
     [
       [ qw( frobnicate foo ) ],
       [ 3 ],
     ]
+
+    'nobreak',
   ],
 
-=head1 EXAMPLES
-
-  my @testz =
-  (
-    # evaluate expected failures
-
-    # modify is expected to fail, but the empty
-    # arrayref is a signal that nothing is expected
-    # back from the test.
+Until "nodebug" or "nobreak" is used after this, all calls
+will hit the breakpoint. Using an expect value of '' turns
+on continue mode for one operation (e.g., for testing 
+proper handling of failure cases):
 
     [
-      [],
-      [ modify => ( label => $field2, 'xyz' ) ],
+        [ qw( this_fails ) ],
+        ''
     ],
 
-    # false label shouldn't change anything
+is equivalent to:
+
+    'continue',
 
     [
-      [],                                         # expect failure
-      [ modify => ( label => $field2, ''    ) ],
+        [ qw( this_fails        ) ],
+        [ qw( expect failure    ) ],
     ],
 
-    [
-      [ qw( ijk                             ) ],  # expect return of 'ijk'
-      [ lookup => ( label => $field2        ) ],
-    ],
+    'nocontinue',
 
-    [
-      [],                                         # expect failure
-      [ modify => ( label => $field2, 0     ) ],
-    ],
+=head3 Turning off comparison breakpoints.
 
-    [
-      [ qw( ijk                             ) ],  # expect string 'ijk' again
-      [ lookup => ( label => $field2        ) ],
-    ],
+Normal behavior for Object::Exercise is to abort the
+execution plan when the first $@ or cmp_deeply failure
+is encountered. The behavior can be changed to continue
+execution via the "continue" directive (or set via the
+"-k" switch when the module is used). Inserting "nocontinue"
+will turn back on the normal behavior.
 
-  );
+This can be helpful when initial operations need to clean
+up before starting: failures can be ignored until some
+set of sanity checks.
+
+    ...
+    'continue',
+
+    [ cleanup that may fail.  ],
+    [ cleanup that may fail.  ],
+
+    'nocontinue',
+
+    [ sanity check ]
+
+Execution will log any failures through the "nocontinue"
+line, after which failures will abort the execution.
 
 Gives output:
 
-  ok 10 - lookup label f.10e => ijk
-  Bogus label: field label 'xyz' used by 'f.10d'
-  ok 11 - modify label f.10e xyz => expected exception
-  Bogus modify label: false label '' (f.10e)
-  ok 12 - modify label f.10e  => expected exception
-  Bogus modify label: false label '0' (f.10e)
+  ok 1 - modify label field_x xyz => xyz
+  ok 2 - lookup label field_x => xyz
+  ok 3 - modify label field_x => expected exception
+  ok 4 - lookup label field_x => xyz
 
-
-=head1 DEBUG
+=head1 DEBUGGING FAILED OPERATIONS
 
 Re-run a failed operation:
 
@@ -794,17 +874,47 @@ Re-run a failed operation:
   184:              $obj->$method( @argz )
     DB<<2>> s
 
+At this point you will be at the first line of $method
+(given sub or coderef location). The failure message 
+will show up for $@ set after calling the method or
+if cmp_deeply finds a discrepency in the result.
 
-The tests can also be run in benchmark mode via:
 
-  BENCHMARK=1 perl t/foo.t;
+=head1 EXAMPLES
 
-which will skip loading Test::More and run the
-operations via:
+    my $field2 = 'field_x';
+  
 
-  eval { $obj->$method( @$argz ) }
+    my @testz =
+    (
+        # evaluate expected failures
 
-timing the entire exeuction via benchmark.
+        # modify is expected to fail, but the empty
+        # arrayref is a signal that nothing is expected
+        # back from the test.
+
+        [
+            [ modify => ( label => $field2, 'xyz' ) ],
+            [ 'xyz'                                 ],  # expect 'xyz'
+        ],
+
+        [
+            [ lookup => ( label => $field2 )    ],
+            [ qw( xyz )                         ],      # expect 'xyz'
+        ],
+
+        [
+            [ modify => ( label => $field2, '' )  ],    # invalid argument: 
+            '',                                         # expect failure
+        ],
+
+        [
+            [ lookup => ( label => $field2 )    ],
+            [ qw( xyz )                         ],      # expect 'xyz'
+        ],
+
+    );
+
 
 =head1 AUTHOR
 

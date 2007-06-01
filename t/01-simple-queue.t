@@ -10,7 +10,7 @@ my @testz =
     [ [ qw( set foo bar ) ], [ qw( bar ) ]  ],
     [ [ qw( get foo     ) ], [ qw( bar ) ]  ],
 
-    'single',
+    'break',
 
     [ [ qw( set foo     ) ], [ qw( bar ) ]  ], 
     [ [ qw( get foo     ) ], [ undef     ]  ],

@@ -1,0 +1,4 @@
+- 1.04 Fri Jun  1 16:42:07 EDT 2007
+
+- eval use Time::HiRes then Benchmark qw( :hireswallclock ).
+  If that fails then use Benchmark without the hireswallclock.

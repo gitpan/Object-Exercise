@@ -4,18 +4,18 @@ WriteMakefile
 (
 
   NAME            => 'Object::Exercise',
-  VERSION         => 1.01,
+  VERSION         => 1.04,
   ABSTRACT_FROM   => 'lib/Object/Exercise.pm',
   PREREQ_PM =>
   {
-    # standard distro, particular versions 
-    # are unlikely to cause pain.
+    # any version of these will be sufficient.
 
     map { ( $_ => 0 ) }
     qw
     (
         strict
         Symbol
+        IO::Handle
         Scalar::Util
 
         Test::More
