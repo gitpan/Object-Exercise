@@ -14,7 +14,7 @@ use Test::More;
 # package variables
 ########################################################################
 
-our $VERSION    = 0.33;
+our $VERSION    = 0.34;
 
 # run_tests & benchmark can be pre-assigned a value here 
 # in some begin block to avoid compiling the un-used 
@@ -252,24 +252,9 @@ my %ref_handlerz =
 $benchmark
 ||= sub
 {
-    # Time::HiRes is supposed to be silently handled by 
-    # Benchmark.
-    # Catch: it aint'. 
-    # Fix is to eval the require of Time::HiRes and fail
-    # through to the benchmark w/o :hireswallclcok if the
-    # first require fails.
-
-    eval
-    {
-        use Time::HiRes;
-        use Benchmark qw( :hireswallclock );
-        1
-    }
-    or
-    eval 'use Benchmark';
+    use Benchmark qw( :hireswallclock );
 
     use File::Basename;
-
 
     my $base    = basename $0;
 

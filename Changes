@@ -1,4 +1,11 @@
 - 1.04 Fri Jun  1 16:42:07 EDT 2007
 
-- eval use Time::HiRes then Benchmark qw( :hireswallclock ).
-  If that fails then use Benchmark without the hireswallclock.
+    eval use Time::HiRes then Benchmark qw( :hireswallclock ).
+    If that fails then use Benchmark without the hireswallclock.
+
+- 1.05 Sun Jun  3 15:00:57 EDT 2007
+
+    Require Benchmark-1.07, which handles issues with 
+    missing Time::HiRes properly.
+
+    Remove begin hacks for dealing with missing Time::HiRes.

@@ -4,10 +4,14 @@ WriteMakefile
 (
 
   NAME            => 'Object::Exercise',
-  VERSION         => 1.04,
+  VERSION         => 1.05,
   ABSTRACT_FROM   => 'lib/Object/Exercise.pm',
   PREREQ_PM =>
   {
+    # current version deals with Time::HiRes issues.
+
+    Benchmark   => 1.07,
+
     # any version of these will be sufficient.
 
     map { ( $_ => 0 ) }
@@ -21,7 +25,6 @@ WriteMakefile
         Test::More
         Test::Deep
 
-        Benchmark
         File::Basename
     )
   },
