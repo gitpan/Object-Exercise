@@ -1,3 +1,10 @@
+- 1.10 Wed Jun 27 02:31:07 EDT 2007
+
+    Split into separate modules for benchmark, execute 
+    operation. Avoids loading benchmark module if it 
+    won't be used; pushed common variables and utility
+    subs into separate module.
+
 - 1.04 Fri Jun  1 16:42:07 EDT 2007
 
     eval use Time::HiRes then Benchmark qw( :hireswallclock ).
