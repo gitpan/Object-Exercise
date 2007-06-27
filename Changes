@@ -1,3 +1,10 @@
+- 1.11 /home/lembark/sandbox/Modules/Object-Exercise
+
+    Minor change in use arg's: -e [optinal name], 
+    -b [optinal name] allow exporting both exercise
+    and benchmark with alternate names; drops -n
+    switch (which only handles one of them).
+
 - 1.10 Wed Jun 27 02:31:07 EDT 2007
 
     Split into separate modules for benchmark, execute 

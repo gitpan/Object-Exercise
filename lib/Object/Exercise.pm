@@ -1,11 +1,11 @@
-# $Id: Exercise.pm 47 2007-06-04 15:22:42Z lembark $
+# $Id: Exercise.pm 53 2007-06-27 12:59:58Z lembark $
 #######################################################################
 # housekeeping
 #######################################################################
 
 package Object::Exercise;
 
-require 5.6.2;
+require 5.6.2; # I'm running 5.8.8; hopefully this is reasonable...
 
 use strict;
 
@@ -17,7 +17,7 @@ use Object::Exercise::Common qw( log_message continue verbose );
 # package variables
 ########################################################################
 
-our $VERSION = 1.00;
+our $VERSION = 1.01;
 
 ########################################################################
 # subroutines
@@ -40,8 +40,7 @@ sub import
     # -n specifies the installed name (vs. 'execution' or 'benchmark'.
     # -p turns off plannng in the test loop.
 
-    my $name    = '';
-    my $type    = '';
+    my %exportz = ();
 
     while( @_ )
     {
@@ -57,17 +56,15 @@ sub import
         }
         elsif( $arg =~ /^-b/ )
         {
-            $type = 'benchmark';
-            $name ||= 'benchmark';
-        }
-        elsif( $arg =~ /^-n/ )
-        {
-            ( $name ) = shift
-            or die "Bogus $package: -n switch without a following name";
+            my $name = ( index $_[0], '-' ) ? 'benchmark' : shift ;
+
+            $exportz{ benchmark } = $name;
         }
         elsif( $arg =~ /^-e/ )
         {
-            # placeholder
+            my $name = ( index $_[0], '-' ) ? 'execute' : shift ;
+
+            $exportz{ execute } = $name;
         }
         else
         {
@@ -75,22 +72,21 @@ sub import
         }
     }
 
-    $type ||= 'execute';
-    $name ||= 'exercise';
+    %exportz = qw( execute exercise ) unless %exportz;
 
-    my $module  = $package . '::' . ucfirst $type;
+    while( my($src,$dst) = each %exportz )
+    {
+        $log_message->( "$package installing '$src' into '$caller' as '$dst'" )
+        if $verbose;
 
-    my $handler = eval "require $module";
+        my $module  = $package . '::' . ucfirst $src;
 
-    # push the configured object out to whatever the 
-    # caller asked for.
+        my $handler = eval "require $module";
 
-    $log_message->( "$package installing '$type' into '$caller' as '$name'" )
-    if $verbose;
+        my $ref     = qualify_to_ref $dst, $caller;
 
-    my $ref     = qualify_to_ref $name, $caller;
-
-    *$ref       = \$handler;
+        *$ref       = \$handler;
+    }
 
     return
 }
@@ -140,14 +136,12 @@ Object::Exercise - Generic execution & benchmark harness for method calls.
 
   my $object = YourClass->new( @whatever );
 
-  $object->prepare_for_test( @more_args );
-
-  $exercise->( $object, @test_opz );    # $object->method( @argz )
+  $exercise->( $object, @test_opz );        # $object->method( @argz )
 
 
 =head1 DESCRIPTION
 
-This package exports a single subroutine , C<exercise>, which
+This package exports a single subroutine , C<$exercise>, which
 functions as an OO execution loop (see '-n' for changing the 
 installed name).
 
@@ -172,35 +166,41 @@ and its arguments.
 
 =over 4
 
-=item -e
+=item -e [yourname]
 
 Default is to install '$execute' to run operations,
 testing for $@, and comparing return values with cmp_deeply.
 
-If neither -e nor -b is used then the default is to supply
-'$execute'.
+The optional 'yourname' can provide an alternate name
+to '$execute'.
 
-=item -b
+=item -b [yourname]
 
 Alternative is to intall '$benchmark' with counts the
 operations and errors (via $@), and reports the total
 elapsed time, operations, and errors.
 
-=item -n yourname
-
-Install the requested handler with an alternative name,
-avoiding symbol table collisions.
+The optional 'yourname' can provide an alternate name
+to '$benchmark'.
 
 =item -v 
 
-Turn on verbose reporting of results in execution mode.
-Equivalent to adding 'verbose' before any arrayrefs.
+Turn on verbose reporting of results in execution mode
+and report the symbols exported, largely equivalent to
+adding 'verbose' before any arrayrefs.
 
 =item -k 
 
 Assume failures are expected and ignore them for logging
 and breakpoints. Equivalent to adding 'continue' before 
 any arrayrefs (i.e., as with "make -k").
+
+=item Notes
+
+If neither -e nor -b is used then the default is to supply
+'$execute'.
+
+If both -e and -b are used then both will be exported.
 
 =back
 
