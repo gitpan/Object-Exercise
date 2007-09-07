@@ -1,21 +1,6 @@
-- 1.11 /home/lembark/sandbox/Modules/Object-Exercise
+- 1.06 Fri Sep  7 16:17:38 EDT 2007
 
-    Minor change in use arg's: -e [optinal name], 
-    -b [optinal name] allow exporting both exercise
-    and benchmark with alternate names; drops -n
-    switch (which only handles one of them).
-
-- 1.10 Wed Jun 27 02:31:07 EDT 2007
-
-    Split into separate modules for benchmark, execute 
-    operation. Avoids loading benchmark module if it 
-    won't be used; pushed common variables and utility
-    subs into separate module.
-
-- 1.04 Fri Jun  1 16:42:07 EDT 2007
-
-    eval use Time::HiRes then Benchmark qw( :hireswallclock ).
-    If that fails then use Benchmark without the hireswallclock.
+    POD bug in synopsis, should have been empty string
 
 - 1.05 Sun Jun  3 15:00:57 EDT 2007
 
@@ -23,3 +8,9 @@
     missing Time::HiRes properly.
 
     Remove begin hacks for dealing with missing Time::HiRes.
+
+- 1.04 Fri Jun  1 16:42:07 EDT 2007
+
+    eval use Time::HiRes then Benchmark qw( :hireswallclock ).
+    If that fails then use Benchmark without the hireswallclock.
+

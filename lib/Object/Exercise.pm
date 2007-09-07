@@ -1,23 +1,387 @@
-# $Id: Exercise.pm 53 2007-06-27 12:59:58Z lembark $
+# $Id: Exercise.pm 47 2007-06-04 15:22:42Z lembark $
 #######################################################################
 # housekeeping
 #######################################################################
 
 package Object::Exercise;
 
-require 5.6.2; # I'm running 5.8.8; hopefully this is reasonable...
+require 5.6.2;
 
 use strict;
-
-use Symbol qw( qualify_to_ref );
-
-use Object::Exercise::Common qw( log_message continue verbose );
+use Test::More;
 
 ########################################################################
 # package variables
 ########################################################################
 
-our $VERSION = 1.01;
+our $VERSION    = 0.34;
+
+# run_tests & benchmark can be pre-assigned a value here 
+# in some begin block to avoid compiling the un-used 
+# portion of code.
+
+our $run_tests;
+our $benchmark;
+
+my $cmp_struct  = '';    
+my $pass        = '';
+my $fail        = '';
+
+# use to control breakpoints within the loop.
+# our necessary to permit use of local.
+
+our $debug      = '';
+
+# handle iterations: verbose controls reporting, 
+# continue ignores errors in the eval of a command. 
+
+my $verbose     = '';
+my $continue    = '';
+my $noplan      = '';
+
+# dispatch table for loop commands.
+# these are non-ref elements in the work queue.
+
+my %parmz =
+(
+    # print anything unknown.
+
+    ''          => sub { print STDERR $_ },
+
+    # otherwise set the appropriate variable.
+
+    debug       => sub { $debug     = 1 },
+    nodebug     => sub { $debug     = 0 },
+
+    continue    => sub { $continue  = 1 },
+    nocontinue  => sub { $continue  = 0 },
+
+    verbose     => sub { $verbose   = 1 },
+    noverbose   => sub { $verbose   = 0 },
+    quiet       => sub { $verbose   = 0 },
+);
+
+for
+(
+    [ qw( quiet     noverbose   ) ],
+    [ qw( break     debug       ) ],
+    [ qw( nobreak   nodebug     ) ],
+)
+{
+    my( $alias, $existing ) = @$_;
+
+    $parmz{ $alias } = $parmz{ $existing }
+    and next;
+
+    die "Invalid alias '$alias' for unknown '$existing'"
+}
+
+########################################################################
+# utility subs
+########################################################################
+
+my $log_message
+= sub
+{
+    use IO::Handle;
+    use Data::Dumper;
+
+    local $Data::Dumper::Purity     = 0;
+    local $Data::Dumper::Terse      = 1;
+    local $Data::Dumper::Indent     = 1;
+    local $Data::Dumper::Deparse    = 1;
+    local $Data::Dumper::Sortkeys   = 1;
+    local $Data::Dumper::Deepcopy   = 0;
+    local $Data::Dumper::Quotekeys  = 0;
+
+    local $, = "\n";
+    local $\ = "\n";
+
+    *STDERR{ IO }->printflush( map { ref $_ ? Dumper $_ : $_ } @_ );
+
+    ()
+};
+
+my $handle_error
+= sub
+{
+  my $cmd = pop;
+
+  $log_message->( @_ );
+
+  local $debug  = 1;
+
+  $DB::single   = 1;
+
+  # at this point &$cmd can be re-executed
+  # with its own breakpoint set via $debug.
+
+  0
+};
+
+my $gen_command
+= sub
+{
+    my( $obj, $argz ) = @_;
+
+    my $method = shift @$argz;
+
+    sub
+    {
+        $DB::single = 1 if $debug;
+
+        $obj->$method( @$argz )
+    }
+};
+
+########################################################################
+# handle one element of the list
+
+my %ref_handlerz =
+(
+    ARRAY =>
+    sub
+    {
+        use Scalar::Util qw( reftype );
+
+        # this is the most common place to end up: dealing with
+        # an action + test or just an action.
+        #
+        # determine if this is a test (two arrayrefs)
+        # or just a command (one arrayref).
+        # append a message to the test if it isn't
+        # already three items long.
+
+        my( $obj, $element  ) = @_;
+
+        my $argz    = '';
+        my $expect  = '';
+        my $method  = '';
+        my $message = '';
+        my $compare = '';
+
+        # no warnings avoids nastygrams about undef values
+        # in join.
+
+        if
+        (
+            1 <= @$element
+            &&
+            'ARRAY' eq reftype $element->[0]
+        )
+        {
+            no warnings;
+
+            ( $argz, $expect, $message ) = @$element;
+
+            $compare    = 1;
+
+            $message ||= join ' ', @$argz, '->', @$expect;
+        }
+        else
+        {
+            no warnings;
+
+            @$argz = @$element;
+
+            $message = join ' ', @$argz;
+        }
+
+        my $cmd     = $gen_command->( $obj, $argz );
+
+        my $result  = eval { [ &$cmd ] };
+
+        if( $@ )
+        {
+            if( $continue || $expect eq '' )
+            {
+                pass "Expected failure: $message" unless $noplan;
+            }
+            else
+            {
+                fail "Unexpected failure: $message" unless $noplan;
+
+                $handle_error->( "Failed execute: $message", $cmd );
+            }
+        }
+        elsif( $compare )
+        {
+            'CODE' eq ref $expect 
+            ? $expect->( $obj, $result, $message )
+            : $cmp_struct->( $result, $expect, $message )
+            and return;
+
+            fail "Failed compare: $message" unless $noplan;
+
+            $handle_error->
+            (
+                "Failed compare: $message",
+                'Found:',   $result,
+                'Expect:',  $expect,
+                $cmd
+            );
+        }
+        elsif( $verbose )
+        {
+            $log_message->( "Successful: $message" );
+        }
+    },
+
+    CODE =>
+    sub
+    {
+        # re-dispatch the thing with the object first
+        # on the stack.
+
+        my $action = splice @_, 1, 1;
+
+        eval { &$action };
+
+        $@ or return;
+
+        if( $continue )
+        {
+            $log_message->( "Failure: $@", $action )
+            if $verbose;
+        }
+        else
+        {
+            $handle_error->( "Failure: $@", sub { &$action } );
+        }
+    },
+);
+
+########################################################################
+# benchmark, execution handlers
+
+$benchmark
+||= sub
+{
+    use Benchmark qw( :hireswallclock );
+
+    use File::Basename;
+
+    my $base    = basename $0;
+
+    my $t0      = Benchmark->new;
+
+    my $obj     = shift;
+
+    my $count   = 0;
+    my $errors  = 0;
+
+    TEST:
+    for( @_ )
+    {
+        if( ref $_ )
+        {
+            ++$count;
+
+            my $argz    = ref $_->[0] ? $_->[0] : $_;
+
+            my $method  = shift @$argz;
+
+            eval { $obj->$method( @$argz ) };
+
+            next unless $@;
+
+            $log_message->( 'Error:', $@, 'Executing:', $method, $argz );
+
+            ++$errors;
+
+            last unless $continue;
+        }
+    }
+
+    my $diff = timestr timediff $t0, Benchmark->new;
+
+    $log_message->
+    (
+        "Benchmark $base: $diff",
+        "Executing: $count items, $errors errors",
+    );
+};
+
+$run_tests
+||= sub
+{
+    use Test::Deep qw( cmp_deeply  );
+
+    $cmp_struct = Test::Deep->can( 'cmp_deeply' );
+
+    my $obj     = shift;
+
+    my $count   = 0;
+
+    unless( $noplan )
+    {
+        $count
+        = grep
+        {
+            (ref $_)              # ignore breaks
+            &&
+            (ref $_ eq q{ARRAY})  # check for array
+            &&
+            (ref $_->[0])         # test in initial location
+        }
+        @_;
+
+        if( $count )
+        {
+            plan tests => $count;
+
+            $log_message->( "Executing: $count tests" )
+            if $verbose;
+        }
+        else
+        {
+            plan tests => 1;
+        }
+    }
+
+    TEST:
+    for( @_ )
+    {
+        # If the next item is not a reference at all --
+        # e.g., if it's a string such as 'break' --
+        # set $debug to true value and try the next test.
+
+        if( my $type = reftype $_ )
+        {
+            my $handler = $ref_handlerz{ $type }
+            or die "Unable to handle item of type '$type'";
+
+            $obj->$handler( $_ );
+        }
+        elsif( 0 < ( my $i = index $_, '=' ) )
+        {
+            my $key = substr $_, 0, $i;
+            my $val = substr $_, ++$i;
+
+            $obj->{ $key } = $val;
+        }
+        elsif( my $handler = $parmz{ $_ } )
+        {
+            &$handler
+        }
+        else
+        {
+            # display the message and keep going.
+
+            $log_message->( $_ );
+        }
+    }
+
+    if( $noplan )
+    {
+        $log_message->( "Execution complete" )
+        if $verbose;
+    }
+    else
+    {
+        $count or pass "Execution complete";
+    }
+};
 
 ########################################################################
 # subroutines
@@ -25,68 +389,55 @@ our $VERSION = 1.01;
 
 sub import
 {
-    my $package = __PACKAGE__;
-    my $caller  = caller;
+    use Symbol;
 
     # discard the class argument.
 
-    shift if $_[0] eq $package;
+    shift;
 
     # arguments:
     # -k turns off fatal on error.
     # -v turns on  verbose.
-    # -b uses benchmark instead of execution handler.
-    # -e uses execution handler (default).
-    # -n specifies the installed name (vs. 'execution' or 'benchmark'.
+    # -b uses benchmark if env doesn't set it first.
+    # -n specifies the installed name
     # -p turns off plannng in the test loop.
 
-    my %exportz = ();
+    my $name    = 'exercise';
 
-    while( @_ )
+    my $sub     = $run_tests;
+
+    for( @_ )
     {
-        my $arg = shift;
-
-        if( $arg =~ /^-k/ )
+        if( /-k/ )
         {
             $continue = 1;
         }
-        elsif( $arg =~ /^-v/ )
+        elsif( /-v/ )
         {
             $verbose = 1;
         }
-        elsif( $arg =~ /^-b/ )
+        elsif( /-b/ )
         {
-            my $name = ( index $_[0], '-' ) ? 'benchmark' : shift ;
-
-            $exportz{ benchmark } = $name;
+            $sub = $benchmark;
         }
-        elsif( $arg =~ /^-e/ )
+        elsif( /-n/ )
         {
-            my $name = ( index $_[0], '-' ) ? 'execute' : shift ;
-
-            $exportz{ execute } = $name;
-        }
-        else
-        {
-            die "Bogus $package: unknown switch '$arg'";
+            ( $name ) = / (\w+) $/x
+            or die "Bogus -n switch: no name found in '$_'";
         }
     }
 
-    %exportz = qw( execute exercise ) unless %exportz;
+    # push the configured object out to whatever the 
+    # caller asked for (default 'exercise').
 
-    while( my($src,$dst) = each %exportz )
-    {
-        $log_message->( "$package installing '$src' into '$caller' as '$dst'" )
-        if $verbose;
+    $log_message->( "Installing '$sub' as '$name'" )
+    if $verbose;
 
-        my $module  = $package . '::' . ucfirst $src;
+    my $caller  = caller;
 
-        my $handler = eval "require $module";
+    my $ref     = qualify_to_ref $name, $caller;
 
-        my $ref     = qualify_to_ref $dst, $caller;
-
-        *$ref       = \$handler;
-    }
+    *$ref       = \$sub;
 
     return
 }
@@ -117,8 +468,8 @@ Object::Exercise - Generic execution & benchmark harness for method calls.
     ],
 
     [
-      [ qw( method expected to fail ) ]   # continue on failure
-      [],
+      [ qw( method expected to fail ) ]   
+      ''                                  # continue on failure
     ],
 
     [
@@ -136,75 +487,33 @@ Object::Exercise - Generic execution & benchmark harness for method calls.
 
   my $object = YourClass->new( @whatever );
 
-  $exercise->( $object, @test_opz );        # $object->method( @argz )
+  $object->prepare_for_test( @more_args );
+
+  $exercise->( $object,     @test_opz );    # $object->method( @argz )
 
 
 =head1 DESCRIPTION
 
-This package exports a single subroutine , C<$exercise>, which
-functions as an OO execution loop (see '-n' for changing the 
-installed name).
+This package exports a single subroutine , C<exercise>, which
+functions as an OO execution loop.
 
-C<$execute> is a subroutine reference that takes an object
-and set of operations. The first element in that list
-is an object of the class being tested. The remaining
-elements are a list of operations, each of which is an
-array reference.
+C<$execute> is a subroutine reference that takes a list of arguments.  The
+first element in that list is an object of the class being tested.  The
+remaining elements are a list of operations, each of which is an array
+reference.
 
 Each operation consists of a method call and the method's arguments. Each
 method call is dispatched using the object, optionally comparing the return
 value to some pre-defined result.
 
-Exceptions are trapped and logged. The last operation can be re-executed if
+Exceptions are trapped and logged.  The last operation can be re-executed if
 it fails.
 
 All operations are passed in as arrayrefs. They can be nested either to store
 a return value and test to run, or to hold a list consisting of a method name
 and its arguments.
 
-=head2 Arguments for "use Object::Exercise"
-
-=over 4
-
-=item -e [yourname]
-
-Default is to install '$execute' to run operations,
-testing for $@, and comparing return values with cmp_deeply.
-
-The optional 'yourname' can provide an alternate name
-to '$execute'.
-
-=item -b [yourname]
-
-Alternative is to intall '$benchmark' with counts the
-operations and errors (via $@), and reports the total
-elapsed time, operations, and errors.
-
-The optional 'yourname' can provide an alternate name
-to '$benchmark'.
-
-=item -v 
-
-Turn on verbose reporting of results in execution mode
-and report the symbols exported, largely equivalent to
-adding 'verbose' before any arrayrefs.
-
-=item -k 
-
-Assume failures are expected and ignore them for logging
-and breakpoints. Equivalent to adding 'continue' before 
-any arrayrefs (i.e., as with "make -k").
-
-=item Notes
-
-If neither -e nor -b is used then the default is to supply
-'$execute'.
-
-If both -e and -b are used then both will be exported.
-
-=back
-
-=head1 Exercising Objects
+=head2 Rationale
 
 The setup code for a typical test file is frequently repetitive.  We have to
 code for the object and each of a collection of method calls. We frequently
@@ -374,6 +683,7 @@ Coderef's are dispatched as standard method calls:
 
     my $coderef = sub { ... };  # or \&somesub
 
+
     [
         [ $coderef, @argz ],
         [ ... ]
@@ -384,9 +694,8 @@ is executed as:
     $obj->$coderef( @argz )
 
 this allows dispatching the object outside of its class,
-say to a utility function that does some extra data checking,
-logging, or updates the module. These are especially useful
-for updating the object state during execution.
+say to a utility function that does some extra data checking
+or logging.
 
 =head2 Re-Running Failed Operations
 
@@ -397,7 +706,7 @@ data (if provided).
 
 In either case, it is often helpful to examine the
 failed operation. This is accomplished here by
-wrapping each exectution in a closure:
+wrapping each exectution in a closure like:
 
   my $cmd
   = sub
@@ -524,11 +833,13 @@ set of sanity checks.
     [ sanity check ]
 
 Execution will log any failures through the "nocontinue"
-line as expected failures, something like:
+line, after which failures will abort the execution.
+
+Gives output:
 
   ok 1 - modify label field_x xyz => xyz
   ok 2 - lookup label field_x => xyz
-* ok 3 - modify label field_x => expected exception
+  ok 3 - modify label field_x => expected exception
   ok 4 - lookup label field_x => xyz
 
 =head1 DEBUGGING FAILED OPERATIONS
@@ -564,7 +875,7 @@ if cmp_deeply finds a discrepency in the result.
     my $field2 = 'field_x';
   
 
-    my @opz =
+    my @testz =
     (
         # evaluate expected failures
 
@@ -573,33 +884,26 @@ if cmp_deeply finds a discrepency in the result.
         # back from the test.
 
         [
-            [ drop =>   ( $field_2 ) ],                 # pre-cleanup
-            ''                                          # ignore failre
-        ],
-
-        [
-            [ write =>  ( label => $field2, 'xyz' ) ],
+            [ modify => ( label => $field2, 'xyz' ) ],
             [ 'xyz'                                 ],  # expect 'xyz'
         ],
 
         [
-            [ read =>   ( label => $field2 )        ],
-            [ qw( xyz )                             ],  # expect 'xyz'
+            [ lookup => ( label => $field2 )    ],
+            [ qw( xyz )                         ],      # expect 'xyz'
         ],
 
         [
-            [ write =>  ( label => $field2, '' )    ],  # invalid argument: 
+            [ modify => ( label => $field2, '' )  ],    # invalid argument: 
             '',                                         # expect failure
         ],
 
         [
-            [ read =>   ( label => $field2 )        ],
-            [ qw( xyz )                             ],  # expect 'xyz'
+            [ lookup => ( label => $field2 )    ],
+            [ qw( xyz )                         ],      # expect 'xyz'
         ],
 
     );
-
-    $execute->( $object, @opz );
 
 
 =head1 AUTHOR
@@ -610,4 +914,3 @@ Steven Lembark <lembark@wrkhors.com>
 
 Copyright (C) 2007 Steven Lembark.
 This code is released under the same terms as Perl-5.8.
-

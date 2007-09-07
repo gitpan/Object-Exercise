@@ -1,9 +1,9 @@
 --- #YAML:1.0
 name:                Object-Exercise
-version:             1.11
+version:             1.06
 abstract:            Generic execution & benchmark harness for method calls.
 license:             ~
-generated_by:        ExtUtils::MakeMaker version 6.31
+generated_by:        ExtUtils::MakeMaker version 6.36
 distribution_type:   module
 requires:     
     Benchmark:                     1.07

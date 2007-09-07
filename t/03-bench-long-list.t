@@ -40,7 +40,7 @@ for( 1 .. 10_000 )
     }
 }
 
-$benchmark->( t::Frobnicate->new, @testz );
+$exercise->( t::Frobnicate->new, @testz );
 
 pass "Benchmark complete";
 
