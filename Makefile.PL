@@ -4,7 +4,7 @@ WriteMakefile
 (
 
   NAME            => 'Object::Exercise',
-  VERSION         => 1.06,
+  VERSION         => 1.12,
   ABSTRACT_FROM   => 'lib/Object/Exercise.pm',
   PREREQ_PM =>
   {

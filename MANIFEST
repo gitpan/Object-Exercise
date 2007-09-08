@@ -1,4 +1,7 @@
 lib/Object/Exercise.pm
+lib/Object/Exercise/Benchmark.pm
+lib/Object/Exercise/Common.pm
+lib/Object/Exercise/Execute.pm
 Makefile.PL
 README
 Changes
