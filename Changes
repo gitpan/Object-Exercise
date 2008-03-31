@@ -1,4 +1,8 @@
-- 1.11 /home/lembark/sandbox/Modules/Object-Exercise
+- 1.13 Mon Mar 31 19:27:27 EDT 2008
+
+    Minor Makefile.PL, testfile udpates.
+
+- 1.11 
 
     Minor change in use arg's: -e [optinal name], 
     -b [optinal name] allow exporting both exercise

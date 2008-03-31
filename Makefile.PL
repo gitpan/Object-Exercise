@@ -1,10 +1,11 @@
+use 5.006;
 use ExtUtils::MakeMaker;
 
 WriteMakefile
 (
 
   NAME            => 'Object::Exercise',
-  VERSION         => 1.12,
+  VERSION         => 1.13,
   ABSTRACT_FROM   => 'lib/Object/Exercise.pm',
   PREREQ_PM =>
   {
