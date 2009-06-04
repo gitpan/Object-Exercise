@@ -1,4 +1,4 @@
-# $Id: Exercise.pm 54 2007-09-08 14:23:59Z lembark $
+# $Id: Exercise.pm 266 2009-06-04 13:48:25Z lembark $
 #######################################################################
 # housekeeping
 #######################################################################
@@ -549,7 +549,7 @@ Re-run a failed operation:
   47:       0
     DB<1> &$cmd
 
-  CM::TxDB::Metadata::t::Harness::CODE(0x8ada248)(/home/slembark/sandbox/Cheetahmail/spot/branches/dev_1_0_0/lib/CM/TxDB/Metadata/t/Harness.pm:184):
+  Metadata::t::Harness::CODE(0x8ada248):
   184:              $obj->$method( @argz )
     DB<<2>> s
 
